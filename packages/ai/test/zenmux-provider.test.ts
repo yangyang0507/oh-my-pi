@@ -35,6 +35,7 @@ describe("zenmux provider support", () => {
 		const provider = getOAuthProviders().find(item => item.id === "zenmux");
 		expect(provider?.name).toBe("ZenMux");
 	});
+
 	test("routes Anthropic-owned models to anthropic-messages", async () => {
 		global.fetch = vi.fn(
 			async () =>
@@ -90,10 +91,59 @@ describe("zenmux provider support", () => {
 		expect(anthropic?.input).toEqual(["text", "image"]);
 		expect(anthropic?.cost.input).toBe(15);
 		expect(anthropic?.cost.cacheWrite).toBe(18.75);
+		expect(anthropic?.maxTokens).toBe(128000);
 
 		const openai = models?.find(model => model.id === "openai/gpt-5.2");
 		expect(openai?.api).toBe("openai-completions");
 		expect(openai?.baseUrl).toBe("https://zenmux.ai/api/v1");
 		expect(openai?.cost.output).toBe(10);
+	});
+
+	test("uses bundled model maxTokens fallback for known models", async () => {
+		global.fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						data: [
+							{
+								id: "anthropic/claude-opus-4.6",
+								display_name: "Anthropic: Claude Opus 4.6",
+								owned_by: "anthropic",
+								input_modalities: ["text", "image"],
+								capabilities: { reasoning: true },
+								context_length: 200000,
+								pricings: {
+									prompt: [{ value: 15, unit: "perMTokens", currency: "USD" }],
+									completion: [{ value: 75, unit: "perMTokens", currency: "USD" }],
+								},
+							},
+							{
+								id: "unknown/new-model",
+								display_name: "Unknown: New Model",
+								owned_by: "unknown",
+								input_modalities: ["text"],
+								capabilities: { reasoning: false },
+								context_length: 100000,
+								pricings: {
+									prompt: [{ value: 1, unit: "perMTokens", currency: "USD" }],
+									completion: [{ value: 2, unit: "perMTokens", currency: "USD" }],
+								},
+							},
+						],
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+		) as unknown as typeof fetch;
+
+		const options = zenmuxModelManagerOptions({ apiKey: "zenmux-test-key" });
+		const models = await options.fetchDynamicModels?.();
+
+		// Known model should use bundled maxTokens (128000 for claude-opus-4.6)
+		const knownModel = models?.find(model => model.id === "anthropic/claude-opus-4.6");
+		expect(knownModel?.maxTokens).toBe(128000);
+
+		// Unknown model should fall back to UNK_MAX_TOKENS (8888)
+		const unknownModel = models?.find(model => model.id === "unknown/new-model");
+		expect(unknownModel?.maxTokens).toBe(8888);
 	});
 });

@@ -747,6 +747,7 @@ export function zenmuxModelManagerOptions(config?: ZenMuxModelManagerConfig): Mo
 	const apiKey = config?.apiKey;
 	const openAiBaseUrl = normalizeZenMuxOpenAiBaseUrl(config?.baseUrl);
 	const anthropicBaseUrl = toZenMuxAnthropicBaseUrl(openAiBaseUrl);
+	const references = createGlobalReferenceMap();
 	return {
 		providerId: "zenmux",
 		...(apiKey && {
@@ -760,12 +761,13 @@ export function zenmuxModelManagerOptions(config?: ZenMuxModelManagerConfig): Mo
 						const pricings = isRecord(entry.pricings) ? entry.pricings : undefined;
 						const capabilities = isRecord(entry.capabilities) ? entry.capabilities : undefined;
 						const isAnthropicModel = isZenMuxAnthropicModel(entry, defaults.id);
+						const reference = references.get(defaults.id);
 						return {
 							...defaults,
-							name: toModelName(entry.display_name, defaults.name),
+							name: toModelName(entry.display_name, reference?.name ?? defaults.name),
 							api: isAnthropicModel ? "anthropic-messages" : "openai-completions",
 							baseUrl: isAnthropicModel ? anthropicBaseUrl : openAiBaseUrl,
-							reasoning: capabilities?.reasoning === true || defaults.reasoning,
+							reasoning: capabilities?.reasoning === true || reference?.reasoning === true || defaults.reasoning,
 							input: toInputCapabilities(entry.input_modalities),
 							cost: {
 								input: getZenMuxPricingValue(pricings, "prompt"),
@@ -773,8 +775,14 @@ export function zenmuxModelManagerOptions(config?: ZenMuxModelManagerConfig): Mo
 								cacheRead: getZenMuxPricingValue(pricings, "input_cache_read"),
 								cacheWrite: getZenMuxCacheWritePrice(pricings),
 							},
-							contextWindow: toPositiveNumber(entry.context_length, defaults.contextWindow),
-							maxTokens: toPositiveNumber(entry.max_completion_tokens, defaults.maxTokens),
+							contextWindow: toPositiveNumber(
+								entry.context_length,
+								reference?.contextWindow ?? defaults.contextWindow,
+							),
+							maxTokens: toPositiveNumber(
+								entry.max_completion_tokens,
+								reference?.maxTokens ?? defaults.maxTokens,
+							),
 						};
 					},
 				}),
